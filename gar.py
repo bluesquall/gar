@@ -71,6 +71,12 @@ def get_activity_list_page(opener, page=1, limit=100):
     #TODO# decode not needed in py3.6.2, but needed in py3.4.0
     activities = [entry['activity'] for entry in j['results']['activities']]
 
+    # Some activites (multi-sport) may miss 'endTimestamp'. In that case, set
+    # it to 'beginTimestamp'
+    for activity in activities:
+        if 'endTimestamp' not in activity:
+            activity['endTimestamp'] = activity['beginTimestamp']
+
     total_pages = int(j['results']['search']['totalPages'])
     log.debug('retrieved page {0} of {1}'.format(page, total_pages))
 
