@@ -71,12 +71,6 @@ def get_activity_list_page(opener, page=1, limit=100):
     #TODO# decode not needed in py3.6.2, but needed in py3.4.0
     activities = [entry['activity'] for entry in j['results']['activities']]
 
-    # Some activites (multi-sport) may miss 'endTimestamp'. In that case, set
-    # it to 'beginTimestamp'
-    for activity in activities:
-        if 'endTimestamp' not in activity:
-            activity['endTimestamp'] = activity['beginTimestamp']
-
     total_pages = int(j['results']['search']['totalPages'])
     log.debug('retrieved page {0} of {1}'.format(page, total_pages))
 
@@ -105,7 +99,28 @@ def get_activity_list(opener, max_activities=-1):
     return activities
 
 
+def fix_endTimestamp(activity):
+    if 'endTimestamp' not in activity:
+        msg = 'activity {0} has no endTimestamp'
+        log.info(msg.format(activity['activityId']))
+
+        log.debug('adding sumElapsedDuration to beginTimestamp')
+        try:
+            activity['endTimestamp'] = activity['beginTimestamp']
+            bts = int(activity['beginTimestamp']['millis'])
+            sed = int(float(activity['sumElapsedDuration']['value']) * 1000)
+            ets = bts + sed # int milliseconds
+            activity['endTimestamp']['millis'] = str(ets)
+            edt = datetime.fromtimestamp(ets/1000)
+            fmt = '%a, %Y %b %d %H:%M'
+            activity['endTimestamp']['display'] = edt.strftime(fmt)
+        except KeyError: # sumElapsedDuration is also missing ?!
+            log.debug('using uploadDate instead')
+            activity['endTimestamp'] = activity['uploadDate']
+
+
 def download(opener, activity, ext='tcx', path='/tmp', retry=3):
+    fix_endTimestamp(activity)
     msg = 'checking activity: {0}, {5}, {1}, ended {2}, uploaded {3}, device {4}'
     log.debug(msg.format(activity['activityId'],
                         activity['activityName']['value'],
