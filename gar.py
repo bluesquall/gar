@@ -13,6 +13,7 @@ import warnings
 import os # mkdir, remove, utime, path.isdir, path.isfile
 import time
 from datetime import datetime
+import dateutil.parser
 from getpass import getpass
 import subprocess # to handle password managers
 import urllib.request, urllib.error
@@ -59,22 +60,23 @@ def log_in(username, password):
     return opener
 
 
-def get_activity_list_page(opener, page=1, limit=100):
+def get_activity_list_page(opener, page=1):
     """
 
     """
-    u = 'http://connect.garmin.com/proxy/activity-search-service-1.0/json/activities?limit={limit}&currentPage={page}'
-    q = urllib.request.Request(url=u.format(limit=limit, page=page))
+    u = 'http://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?currentPage={page}'
+    q = urllib.request.Request(url=u.format(page=page))
     log.debug('query: {}'.format(q.get_full_url()))
-    r = opener.open(q, timeout=100)
+    r = opener.open(q, timeout=121)
     j = json.loads(r.read().decode('utf-8'))
     #TODO# decode not needed in py3.6.2, but needed in py3.4.0
     activities = [entry['activity'] for entry in j['results']['activities']]
 
-    total_pages = int(j['results']['search']['totalPages'])
+    total_pages = int(j['results']['totalPages'])
+    total_found = int(j['results']['totalFound'])
     log.debug('retrieved page {0} of {1}'.format(page, total_pages))
 
-    return activities, total_pages
+    return activities, total_found
 
 
 def get_activity_list(opener, max_activities=-1):
@@ -84,47 +86,28 @@ def get_activity_list(opener, max_activities=-1):
     log.info('getting list of activities')
 
     page = 1
-    if max_activities < 0 or max_activities > 100:
-        limit = 100
-    else: # 0 < max_activities < 100
-        limit = max_activities
-    activities, total_pages = get_activity_list_page(opener, page, limit)
+    activities, total_found = get_activity_list_page(opener, page)
+    if max_activities == -1:
+        max_activities = total_found
 
-    while page < total_pages and len(activities) < max_activities:
+    while len(activities) < max_activities:
         page += 1
-        a, _tp = get_activity_list_page(opener, page, limit)
+        log.debug('retrieving page {0}'.format(page))
+        a, _tp = get_activity_list_page(opener, page)
         activities.extend(a)
+
+    if len(activities) > max_activities:
+        del activities[max_activities:]
 
     log.info('found {0} activities'.format(len(activities)))
     return activities
 
 
-def fix_endTimestamp(activity):
-    if 'endTimestamp' not in activity:
-        msg = 'activity {0} has no endTimestamp'
-        log.info(msg.format(activity['activityId']))
-
-        log.debug('adding sumElapsedDuration to beginTimestamp')
-        try:
-            activity['endTimestamp'] = activity['beginTimestamp']
-            bts = int(activity['beginTimestamp']['millis'])
-            sed = int(float(activity['sumElapsedDuration']['value']) * 1000)
-            ets = bts + sed # int milliseconds
-            activity['endTimestamp']['millis'] = str(ets)
-            edt = datetime.fromtimestamp(ets/1000)
-            fmt = '%a, %Y %b %d %H:%M'
-            activity['endTimestamp']['display'] = edt.strftime(fmt)
-        except KeyError: # sumElapsedDuration is also missing ?!
-            log.debug('using uploadDate instead')
-            activity['endTimestamp'] = activity['uploadDate']
-
-
 def download(opener, activity, ext='tcx', path='/tmp', retry=3):
-    fix_endTimestamp(activity)
     msg = 'checking activity: {0}, {5}, {1}, ended {2}, uploaded {3}, device {4}'
     log.debug(msg.format(activity['activityId'],
-                        activity['activityName']['value'],
-                        activity['endTimestamp']['display'],
+                        activity['activityName'],
+                        activity['activitySummary']['EndTimestamp']['display'],
                         activity['uploadDate']['display'],
                         activity['device']['display'],
                         ext
@@ -146,7 +129,7 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
     while retry > 0:
         log.info('downloading activity {}: {}'.format(
                 activity['activityId'],
-                activity['activityName']['value']))
+                activity['activityName']))
         try:
             log.debug('query: {}'.format(q.get_full_url()))
             r = opener.open(q, timeout=500)
@@ -185,10 +168,11 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
 def set_timestamp_to_end(activity, ext='tcx', path='/tmp'):
     fn = 'activity_{0}.{1}'.format(activity['activityId'],ext)
     fp = os.path.join(path,fn)
-    ets = activity['endTimestamp']
+    ets = activity['activitySummary']['EndTimestamp']
     log.info('setting {0} timestamp to {1}'.format(fp, ets['display']))
     try:
-        os.utime(fp, (datetime.now().timestamp(), int(ets['millis'])/1000))
+        os.utime(fp, (datetime.now().timestamp(),
+            time.mktime(dateutil.parser.parse(ets['value']).timetuple())))
     except FileNotFoundError:
         log.warn('could not find {0} to set timestamp, skipping'.format(fp))
 
