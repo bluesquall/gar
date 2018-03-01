@@ -17,6 +17,7 @@ Usage
 ```shell
 % ./gar.py -h
 usage: gar.py [-h] [-V] [-v] [-n MAX_ACTIVITIES] [-P PASSCMD] [-e] [-p PATH]
+              [-t] [-f]
               username
 
 Garmin Connect activity archiver
@@ -35,6 +36,8 @@ optional arguments:
                         Connect
   -e, --endtimestamp    set downloaded file timestamps to activity end
   -p PATH, --path PATH  root path to download into
+  -t, --tcx             download exported .tcx files
+  -f, --fit             download (original) .fit files
 %
 ```
 
