@@ -122,8 +122,8 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
     if os.path.isfile(filepath):
         log.info('{0} already exists, skipping'.format(filepath))
         retry = 0
-    elif activity['device']['display'] == 'Unknown':
-        log.warn('activity {} appears to be manual entry, skipping'.format(activity['activityId']))
+    elif activity['deviceId'] == '0':
+        log.warn('activity {} has deviceId 0 (manual entry) skipping'.format(activity['activityId']))
         retry = 0
 
     while retry > 0:
