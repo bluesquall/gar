@@ -84,11 +84,10 @@ Notes
 TO-DO
 -----
 
-* change file timestamps to activity *end* times
-
-* download (and unzip) `.fit` files
-
 * consider using [requests](http://docs.python-requests.org) instead of urllib
+
+* include an option to output a list of activities and summary statistics,
+  sorted by date
 
 History
 -------
