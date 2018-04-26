@@ -53,7 +53,7 @@ def log_in(username, password):
     # At this point, the response page is different for FAILURE vs SUCCESS
     #TODO# Check the response and change the POST to see if login was successful.
 
-    q = urllib.request.Request(url='https://connect.garmin.com/post-auth/login')
+    q = urllib.request.Request(url='https://connect.garmin.com/modern')
     r = opener.open(q, timeout=100)
 
     log.debug('logged in as {}'.format(username))
@@ -104,10 +104,9 @@ def get_activity_list(opener, max_activities=-1):
 
 
 def download(opener, activity, ext='tcx', path='/tmp', retry=3):
-    msg = 'checking activity: {0}, {5}, {1}, ended {2}, uploaded {3}, device {4}'
+    msg = 'checking activity: {0}, {4}, {1}, uploaded {2}, device {3}'
     log.debug(msg.format(activity['activityId'],
                         activity['activityName'],
-                        activity['activitySummary']['EndTimestamp']['display'],
                         activity['uploadDate']['display'],
                         activity['device']['display'],
                         ext
@@ -168,7 +167,7 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
 def set_timestamp_to_end(activity, ext='tcx', path='/tmp'):
     fn = 'activity_{0}.{1}'.format(activity['activityId'],ext)
     fp = os.path.join(path,fn)
-    ets = activity['activitySummary']['EndTimestamp']
+    ets = activity['uploadDate']
     log.info('setting {0} timestamp to {1}'.format(fp, ets['display']))
     try:
         os.utime(fp, (datetime.now().timestamp(),
