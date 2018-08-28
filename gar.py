@@ -4,8 +4,6 @@
 main docstring...
 
 references:
-    - 
-    - https://connect.garmin.com/proxy/activity-service-1.3/
 """
 
 import logging
@@ -60,44 +58,19 @@ def log_in(username, password):
     return opener
 
 
-def get_activity_list_page(opener, page=1):
-    """
-
-    """
-    u = 'http://connect.garmin.com/proxy/activity-search-service-1.2/json/activities?currentPage={page}'
-    q = urllib.request.Request(url=u.format(page=page))
-    log.debug('query: {}'.format(q.get_full_url()))
-    r = opener.open(q, timeout=121)
-    j = json.loads(r.read().decode('utf-8'))
-    #TODO# decode not needed in py3.6.2, but needed in py3.4.0
-    activities = [entry['activity'] for entry in j['results']['activities']]
-
-    total_pages = int(j['results']['totalPages'])
-    total_found = int(j['results']['totalFound'])
-    log.debug('retrieved page {0} of {1}'.format(page, total_pages))
-
-    return activities, total_found
-
-
-def get_activity_list(opener, max_activities=-1):
+def get_activity_list(opener, max_activities=99, timeout=121):
     """
 
     """
     log.info('getting list of activities')
 
-    page = 1
-    activities, total_found = get_activity_list_page(opener, page)
-    if max_activities == -1:
-        max_activities = total_found
+    u = 'http://connect.garmin.com/proxy/activitylist-service/activities/search/activities?limit={0}'
+    q = urllib.request.Request(url=u.format(max_activities))
+    log.debug('query: {}'.format(q.get_full_url()))
+    r = opener.open(q, timeout=timeout)
 
-    while len(activities) < max_activities:
-        page += 1
-        log.debug('retrieving page {0}'.format(page))
-        a, _tp = get_activity_list_page(opener, page)
-        activities.extend(a)
-
-    if len(activities) > max_activities:
-        del activities[max_activities:]
+    activities = json.loads(r.read().decode('utf-8'))
+    #TODO# decode not needed in py3.6.2, but needed in py3.4.0
 
     log.info('found {0} activities'.format(len(activities)))
     return activities
@@ -107,8 +80,8 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
     msg = 'checking activity: {0}, {4}, {1}, uploaded {2}, device {3}'
     log.debug(msg.format(activity['activityId'],
                         activity['activityName'],
-                        activity['uploadDate']['display'],
-                        activity['device']['display'],
+                        activity['startTimeGMT'],
+                        activity['deviceId'],
                         ext
                     ))
 
@@ -118,11 +91,14 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
     filename = 'activity_{0}.{1}'.format(activity['activityId'],ext)
     filepath = os.path.join(path,filename)
 
+    if 'deviceId' in activity:
+        log.debug('activity {0} has deviceId {1}'.format(activity['activityId'], activity['deviceId']))
+
     if os.path.isfile(filepath):
         log.info('{0} already exists, skipping'.format(filepath))
         retry = 0
-    elif activity['deviceId'] == '0':
-        log.warn('activity {} has deviceId 0 (manual entry) skipping'.format(activity['activityId']))
+    elif 'deviceId' not in activity or activity['deviceId'] == '0':
+        log.warn('activity {} has deviceId 0 or missing (manual entry) skipping'.format(activity['activityId']))
         retry = 0
 
     while retry > 0:
@@ -167,11 +143,15 @@ def download(opener, activity, ext='tcx', path='/tmp', retry=3):
 def set_timestamp_to_end(activity, ext='tcx', path='/tmp'):
     fn = 'activity_{0}.{1}'.format(activity['activityId'],ext)
     fp = os.path.join(path,fn)
-    ets = activity['uploadDate']
-    log.info('setting {0} timestamp to {1}'.format(fp, ets['display']))
     try:
-        os.utime(fp, (datetime.now().timestamp(),
-            time.mktime(dateutil.parser.parse(ets['value']).timetuple())))
+        ets = (activity['beginTimestamp'] + activity['elapsedDuration'])//1000
+    except TypeError as err: # looks like time fields are different for multisport
+        sts = dateutil.parser.parse(activity['startTimeGMT']).timestamp()
+        log.warn('time information formatted differently for {0}, using start'.format(activity))
+        ets = sts
+    log.info('setting {0} timestamp to {1}'.format(fp, datetime.fromtimestamp(ets)))
+    try:
+        os.utime(fp, (datetime.now().timestamp(), ets))
     except FileNotFoundError:
         log.warn('could not find {0} to set timestamp, skipping'.format(fp))
 
@@ -242,8 +222,8 @@ if __name__ == "__main__":
             help='username to use when logging into Garmin Connect')
     parser.add_argument('-v','--verbosity', action='count', default=1,
             help='display verbose output')
-    parser.add_argument('-n','--max-activities', type=int, default=-1,
-            help='display verbose output')
+    parser.add_argument('-n','--max-activities', type=int, default=13,
+            help='How many activities should I try to download?')
     parser.add_argument('-P','--passcmd', type=str,
             help='command to get password for logging into Garmin Connect')
     parser.add_argument('-e','--endtimestamp', action='store_true', default=True,
